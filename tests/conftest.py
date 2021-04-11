@@ -4,6 +4,11 @@ import sys
 import pytest
 import django
 from django.core import management
+from phonenumber_field.phonenumber import validate_region
+
+
+def pytest_addoption(parser):
+    parser.addoption("--phone-number-region", help="Test with regional phone numbers")
 
 
 def pytest_configure(config):
@@ -52,7 +57,31 @@ def pytest_configure(config):
         GRAPHENE={"SCHEMA": "tests.schema.schema"},
     )
 
+    region = config.getoption("--phone-number-region")
+    if region:
+        validate_region(region)
+        settings.PHONENUMBER_DB_FORMAT = "NATIONAL"
+        settings.PHONENUMBER_DEFAULT_REGION = region
+
     django.setup()
+
+
+def pytest_collection_modifyitems(config, items):
+    region = config.getoption("--phone-number-region")
+    if region:
+        reason = "wrong phone number region"
+        item_filter = (
+            lambda item: "international" in item.keywords
+            or f"region_{region}" not in item.keywords
+        )
+    else:
+        reason = "no phone number region provided: skip national tests"
+        item_filter = lambda item: "national" in item.keywords
+
+    skip_conflicting = pytest.mark.skip(reason=reason)
+    for item in items:
+        if item_filter(item):
+            item.add_marker(skip_conflicting)
 
 
 # This uses the `client` fixture from `pytest-django`
